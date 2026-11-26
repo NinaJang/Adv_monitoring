@@ -66,7 +66,7 @@ def test_brave_queries_sites(monkeypatch):
 
 def _cfg(**kw):
     cfg = {"keywords": ["한국 기관"], "require_keyword_match": True,
-           "promo_words": ["상담", "할인", "협찬"], "exclude_url_contains": ["official.go.kr"],
+           "promo_words": ["상담", "할인", "협찬"], "claim_words": ["입점"], "watch_companies": ["라스북"], "exclude_url_contains": ["official.go.kr"],
            "exclude_text_contains": ["채용"]}
     cfg.update(kw)
     return cfg
@@ -87,6 +87,24 @@ def test_filter_score_and_dedupe():
     assert [p.url for p in new] == ["https://blog.naver.com/a/1", "https://blog.naver.com/b/2"]
     assert new[0].promo_score == 2 and new[0].promo_words == ["할인", "협찬"]
     assert new[0].first_seen == "2026-11-26"
+
+
+def test_watch_company_and_claim_rank_first():
+    cfg = _cfg()
+    posts = [
+        Post("naver_blog", "q", "한국기관 할인 상담", "https://a.com/1"),
+        Post("naver_blog", "q", "라스북 한국 기관 공식 입점!", "https://a.com/2", author="라스 북"),
+    ]
+    new = main.select_new(posts, set(), cfg, "2026-11-26")
+    assert new[0].url == "https://a.com/2"
+    assert new[0].promo_score == 8 and new[0].promo_words == ["라스북", "입점"]
+    report = main.render_report(new, "2026-11-26", 2, [], min_score=3)
+    assert "a.com/2" in report and "a.com/1" not in report and "3점 미만 1건" in report
+
+
+def test_search_queries_include_extras():
+    cfg = {"keywords": ["국립중앙과학관"], "extra_queries": ["국립중앙과학관 라스북", "국립중앙과학관"]}
+    assert main.search_queries(cfg) == ["국립중앙과학관", "국립중앙과학관 라스북"]
 
 
 def test_run_end_to_end(tmp_path: Path, monkeypatch):
