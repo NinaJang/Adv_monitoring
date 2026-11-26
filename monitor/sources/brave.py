@@ -28,7 +28,7 @@ def _queries(keyword: str, cfg: dict) -> list[tuple[str, str]]:
 
 
 def search(keyword: str, cfg: dict, api_key: str,
-           session: requests.Session | None = None) -> list[Post]:
+           session: requests.Session | None = None, errors: list[str] | None = None) -> list[Post]:
     session = session or requests.Session()
     headers = {"Accept": "application/json", "X-Subscription-Token": api_key}
     pages = max(1, min(int(cfg.get("pages", 2)), 10))
@@ -49,7 +49,10 @@ def search(keyword: str, cfg: dict, api_key: str,
                 resp = session.get(API_URL, headers=headers, params=params, timeout=20)
                 resp.raise_for_status()
             except requests.RequestException as exc:
-                log.warning("Brave 검색 실패 (%s, page %d): %s", query, page + 1, exc)
+                msg = f"Brave 검색 실패 ({query}): {exc}"
+                log.warning(msg)
+                if errors is not None:
+                    errors.append(msg)
                 break
             finally:
                 time.sleep(REQUEST_INTERVAL)

@@ -108,6 +108,7 @@ def score_post(post: Post, cfg: dict) -> None:
 def collect(cfg: dict) -> tuple[list[Post], list[str]]:
     posts: list[Post] = []
     notes: list[str] = []
+    errors: list[str] = []
     src = cfg.get("sources") or {}
 
     ncfg = src.get("naver") or {}
@@ -115,7 +116,7 @@ def collect(cfg: dict) -> tuple[list[Post], list[str]]:
         cid, secret = os.getenv("NAVER_CLIENT_ID"), os.getenv("NAVER_CLIENT_SECRET")
         if cid and secret:
             for kw in cfg["queries"]:
-                found = naver.search(kw, ncfg, cid, secret)
+                found = naver.search(kw, ncfg, cid, secret, errors=errors)
                 log.info("네이버 '%s': %d건", kw, len(found))
                 posts += found
         else:
@@ -126,7 +127,7 @@ def collect(cfg: dict) -> tuple[list[Post], list[str]]:
         key = os.getenv("BRAVE_API_KEY")
         if key:
             for kw in _strings(bcfg.get("queries")) or cfg["queries"]:
-                found = brave.search(kw, bcfg, key)
+                found = brave.search(kw, bcfg, key, errors=errors)
                 log.info("Brave '%s': %d건", kw, len(found))
                 posts += found
         else:
@@ -134,6 +135,9 @@ def collect(cfg: dict) -> tuple[list[Post], list[str]]:
 
     for n in notes:
         log.warning(n)
+    # 같은 원인의 오류가 검색어마다 반복되므로 중복 제거 후 최대 10개만 리포트에 표시
+    unique = list(dict.fromkeys(errors))
+    notes += unique[:10] + ([f"...외 오류 {len(unique) - 10}건"] if len(unique) > 10 else [])
     return posts, notes
 
 

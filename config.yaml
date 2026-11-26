@@ -81,10 +81,16 @@ exclude_url_contains:
 exclude_text_contains: []
 
 sources:
-  # ---- 네이버 검색 Open API (블로그 / 카페) ----
+  # ---- 네이버 검색 API (블로그 / 카페) ----
   # GitHub Secrets: NAVER_CLIENT_ID, NAVER_CLIENT_SECRET
+  #   hub    = NAVER API HUB(네이버 클라우드 플랫폼)에서 등록한 앱의 Client ID / Client Secret
+  #            (계정 IAM Access Key 가 아님)
+  #   legacy = 기존 네이버 개발자센터에서 이미 발급받은 키가 있을 때
   naver:
     enabled: true
+    api: hub
+    # 호출 주소가 안내와 다르면 여기서 바꾸세요. {type} 자리에 blog / cafearticle 이 들어갑니다.
+    # url: "https://naverapihub.apigw.ntruss.com/search/v1/{type}"
     types: [blog, cafearticle]
     pages: 3              # 키워드 x 유형별로 최신순 100건씩 최대 몇 페이지 조회할지 (최대 10)
 

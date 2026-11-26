@@ -49,7 +49,11 @@
 - `promo_words`: 홍보성 판별 단어를 필요에 맞게 고칩니다.
 
 ### 2. API 키 발급
-- **네이버**: https://developers.naver.com/apps/#/register 에서 애플리케이션을 등록합니다. 사용 API는 '검색'을 고르고, Client ID와 Client Secret을 받습니다. 무료이며 하루 25,000회까지 호출할 수 있습니다.
+- **네이버**: 검색 API는 네이버 개발자센터에서 **NAVER API HUB**(네이버 클라우드 플랫폼)로 옮겨 갔습니다. 새 키는 여기서 받아야 합니다.
+  1. 네이버 클라우드 플랫폼(ncloud.com)에 가입하고 콘솔에 로그인합니다.
+  2. NAVER API HUB에서 이용 신청을 하고 **앱을 등록**합니다. 블로그 검색과 카페 검색을 선택합니다.
+  3. 앱의 **Client ID / Client Secret**을 받습니다. 계정 IAM 키(Access Key)는 쓰지 않습니다.
+  4. 개발자센터에서 예전에 받아 둔 키를 쓰려면 `config.yaml`에서 `api: legacy`로 바꿉니다.
 - **Brave**: https://api-dashboard.search.brave.com 에 가입해 Search 요금제의 API 키를 받습니다. 매월 무료 크레딧이 있습니다.
   - 기본 설정에서는 하루 최대 28회를 호출합니다(검색어 4개 × 웹+SNS 7곳). 한 달이면 약 840회입니다.
 

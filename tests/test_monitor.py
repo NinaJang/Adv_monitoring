@@ -51,6 +51,16 @@ def test_naver_parses_and_pages(monkeypatch):
     assert len(s.calls) == 2  # total이 적어서 다음 페이지는 요청하지 않음
     assert posts[0].published == "2026-11-20" and posts[0].title == "한국기관 지정 업체"
     assert posts[1].source == "naver_cafearticle" and posts[1].author == "맘카페"
+    assert s.calls[0][0] == "https://naverapihub.apigw.ntruss.com/search/v1/blog"
+
+
+def test_naver_error_reported():
+    class Boom:
+        def get(self, *a, **k):
+            raise naver.requests.ConnectionError("401 Unauthorized")
+    errors = []
+    assert naver.search("라스북", {"types": ["blog"], "api": "legacy"}, "i", "s", Boom(), errors) == []
+    assert "401" in errors[0] and "blog" in errors[0]
 
 
 def test_brave_queries_sites(monkeypatch):
