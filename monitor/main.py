@@ -125,7 +125,7 @@ def collect(cfg: dict) -> tuple[list[Post], list[str]]:
     if bcfg.get("enabled"):
         key = os.getenv("BRAVE_API_KEY")
         if key:
-            for kw in cfg["queries"]:
+            for kw in _strings(bcfg.get("queries")) or cfg["queries"]:
                 found = brave.search(kw, bcfg, key)
                 log.info("Brave '%s': %d건", kw, len(found))
                 posts += found
