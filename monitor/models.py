@@ -48,6 +48,7 @@ class Post:
     description: str = ""
     author: str = ""
     published: str = ""  # YYYY-MM-DD 또는 원문 그대로(알 수 없으면 빈 값)
+    institution_mentioned: bool = False
     promo_score: int = 0
     promo_words: list[str] = field(default_factory=list)
     first_seen: str = ""

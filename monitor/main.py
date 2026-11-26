@@ -23,18 +23,22 @@ from monitor.sources import brave, naver
 
 log = logging.getLogger("monitor")
 KST = timezone(timedelta(hours=9))
-CSV_FIELDS = ["first_seen", "promo_score", "promo_words", "source", "keyword",
+CSV_FIELDS = ["first_seen", "institution_mentioned", "promo_score", "promo_words", "source", "keyword",
               "published", "author", "title", "url", "description"]
-PLACEHOLDER_KEYWORD = "기관명을 입력하세요"
+def _strings(values) -> list[str]:
+    return [str(v).strip() for v in values or [] if v and str(v).strip()]
 
 
 # ---------------------------------------------------------------- 설정/저장
 def load_config(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
-    cfg["keywords"] = [k.strip() for k in cfg.get("keywords") or [] if k and k.strip()]
-    if not cfg["keywords"] or PLACEHOLDER_KEYWORD in cfg["keywords"]:
-        raise SystemExit("config.yaml 의 keywords 에 기관 이름을 입력해 주세요.")
+    for name in ("required_words", "keywords", "queries"):
+        cfg[name] = _strings(cfg.get(name))
+    if not cfg["required_words"]:
+        raise SystemExit("config.yaml 의 required_words 에 반드시 포함돼야 할 단어(업체명)를 입력해 주세요.")
+    if not cfg["queries"]:
+        raise SystemExit("config.yaml 의 queries 에 검색어를 입력해 주세요.")
     return cfg
 
 
@@ -55,7 +59,9 @@ def append_posts(csv_path: Path, posts: list[Post]) -> None:
             w.writeheader()
         for p in posts:
             w.writerow({
-                "first_seen": p.first_seen, "promo_score": p.promo_score,
+                "first_seen": p.first_seen,
+                "institution_mentioned": "Y" if p.institution_mentioned else "N",
+                "promo_score": p.promo_score,
                 "promo_words": ", ".join(p.promo_words), "source": p.source,
                 "keyword": p.keyword, "published": p.published, "author": p.author,
                 "title": p.title, "url": p.url, "description": p.description,
@@ -76,20 +82,18 @@ def keep_post(post: Post, cfg: dict) -> bool:
     text = f"{post.title} {post.description}"
     if any(x.lower() in text.lower() for x in cfg.get("exclude_text_contains") or [] if x):
         return False
-    if cfg.get("require_keyword_match", True):
-        # 기관명 중 하나라도 포함돼야 함. 띄어쓰기 차이는 무시 ("국립 중앙과학관" == "국립중앙과학관").
-        haystack = _squash(text + " " + post.author)
-        if not any(_squash(k) in haystack or k.lower() in url for k in cfg["keywords"]):
-            return False
-    return True
+    # required_words(업체명)는 전부 포함돼야 함. 띄어쓰기 차이는 무시 ("라스 북" == "라스북").
+    haystack = _squash(f"{text} {post.author} {url}")
+    return all(_squash(w) in haystack for w in cfg["required_words"])
 
 
-# 단어 종류별 가중치
-WEIGHTS = {"watch_companies": 5, "claim_words": 3, "promo_words": 1}
+# 단어 종류별 가중치. keywords = 기관명 언급
+WEIGHTS = {"keywords": 5, "claim_words": 3, "promo_words": 1}
 
 
 def score_post(post: Post, cfg: dict) -> None:
     text = _squash(f"{post.title} {post.description} {post.author} {post.url}")
+    post.institution_mentioned = any(_squash(k) in text for k in cfg["keywords"])
     matched, score = [], 0
     for group, weight in WEIGHTS.items():
         for w in cfg.get(group) or []:
@@ -98,13 +102,6 @@ def score_post(post: Post, cfg: dict) -> None:
                 score += weight
     post.promo_words = matched
     post.promo_score = score
-
-
-def search_queries(cfg: dict) -> list[str]:
-    """기관명 단독 검색 + 기관명과 관심업체/공식주장 단어 조합 검색"""
-    queries = list(cfg["keywords"])
-    queries += [q for q in cfg.get("extra_queries") or [] if q and q not in queries]
-    return queries
 
 
 # ---------------------------------------------------------------- 수집
@@ -117,7 +114,7 @@ def collect(cfg: dict) -> tuple[list[Post], list[str]]:
     if ncfg.get("enabled"):
         cid, secret = os.getenv("NAVER_CLIENT_ID"), os.getenv("NAVER_CLIENT_SECRET")
         if cid and secret:
-            for kw in search_queries(cfg):
+            for kw in cfg["queries"]:
                 found = naver.search(kw, ncfg, cid, secret)
                 log.info("네이버 '%s': %d건", kw, len(found))
                 posts += found
@@ -128,8 +125,7 @@ def collect(cfg: dict) -> tuple[list[Post], list[str]]:
     if bcfg.get("enabled"):
         key = os.getenv("BRAVE_API_KEY")
         if key:
-            queries = search_queries(cfg) if bcfg.get("use_extra_queries") else cfg["keywords"]
-            for kw in queries:
+            for kw in cfg["queries"]:
                 found = brave.search(kw, bcfg, key)
                 log.info("Brave '%s': %d건", kw, len(found))
                 posts += found
@@ -152,7 +148,7 @@ def select_new(posts: list[Post], seen: set[str], cfg: dict, today: str) -> list
         score_post(p, cfg)
         p.first_seen = today
         new[key] = p
-    # 홍보 점수 높은 순, 같은 점수면 최신 작성일 순
+    # 기관명 언급(점수에 포함) → 홍보 점수 높은 순, 같은 점수면 최신 작성일 순
     result = sorted(new.values(), key=lambda p: p.published, reverse=True)
     return sorted(result, key=lambda p: p.promo_score, reverse=True)
 
@@ -166,23 +162,25 @@ def render_report(new: list[Post], today: str, total_seen: int, notes: list[str]
                   min_score: int = 0) -> str:
     shown = [p for p in new if p.promo_score >= min_score]
     hidden = len(new) - len(shown)
+    mentioned = sum(p.institution_mentioned for p in shown)
     lines = [f"# 모니터링 결과 {today}", "",
-             f"- 새로 발견된 게시물: **{len(new)}건** (의심 게시물 {len(shown)}건"
-             + (f", 홍보점수 {min_score}점 미만 {hidden}건은 `data/posts.csv`에만 기록" if hidden else "")
-             + ")",
+             f"- 새로 발견된 게시물: **{len(new)}건**"
+             + (f" (점수 {min_score}점 미만 {hidden}건은 `data/posts.csv`에만 기록)" if hidden else ""),
+             f"- 그중 검색 결과 요약문에 기관명이 보이는 게시물: **{mentioned}건**"
+             " (나머지는 본문에만 있을 수 있으니 링크를 열어 확인하세요)",
              f"- 누적 기록: {total_seen}건 (`data/posts.csv`)", ""]
     for n in notes:
         lines.append(f"> ⚠️ {n}")
     if notes:
         lines.append("")
     if not shown:
-        lines.append("새 의심 게시물이 없습니다.")
+        lines.append("새 게시물이 없습니다.")
         return "\n".join(lines) + "\n"
-    lines += ["| 홍보점수 | 출처 | 작성일 | 작성자 | 제목 | 매칭 단어 |",
-              "|---:|---|---|---|---|---|"]
+    lines += ["| 점수 | 기관명 | 출처 | 작성일 | 작성자 | 제목 | 매칭 단어 |",
+              "|---:|:---:|---|---|---|---|---|"]
     for p in shown:
         lines.append(
-            f"| {p.promo_score} | {p.source} | {p.published or '-'} | {_md(p.author) or '-'} "
+            f"| {p.promo_score} | {'✅' if p.institution_mentioned else '확인 필요'} | {p.source} | {p.published or '-'} | {_md(p.author) or '-'} "
             f"| [{_md(p.title) or p.url}]({p.url}) | {_md(', '.join(p.promo_words)) or '-'} |"
         )
     return "\n".join(lines) + "\n"

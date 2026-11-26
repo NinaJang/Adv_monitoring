@@ -17,7 +17,8 @@ REQUEST_INTERVAL = 1.1  # 무료 요금제는 초당 1회 제한
 
 def _queries(keyword: str, cfg: dict) -> list[tuple[str, str]]:
     """(source 이름, 검색어) 목록"""
-    phrase = f'"{keyword}"'
+    # 각 단어를 따옴표로 묶어 모두 포함된 결과만 찾도록 함: "라스북" "국립중앙과학관"
+    phrase = " ".join(f'"{t}"' for t in keyword.split())
     queries = []
     if cfg.get("web_search", True):
         queries.append(("brave_web", phrase))
